@@ -159,7 +159,7 @@ $CENTRAL_REPORTS_DIR/<target>_<timestamp>/
 
 - **Logs:** Prints success or failure messages.
 
-## 10. main function
+## 7. main function
 
 ```bash
 main() { 
