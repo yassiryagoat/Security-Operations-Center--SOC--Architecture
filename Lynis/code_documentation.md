@@ -39,17 +39,14 @@ mkdir -p "$CENTRAL_REPORTS_DIR" /opt/audit/logs /opt/audit/processed
 **The project Architecture overview :**
 
  **/opt/audit/** \
-│ \
-
+│ 
 ├── **logs/** \
 │     └─────── **lynis_automation_{$TIMESTAMP}.log**  # $ LOG_FILE \
-│ \
-
+│ 
 ├── **processed/** \
 │     ├────── **{hostname}_{ip}_{$TIMESTAMP}**.html  # Single-system report \
 │     └────── **consolidated_report_{$TIMESTAMP}**.json # Multi-system summary \
-
-│\
+│
 └── **reports/**    # $ CENTRAL_REPORT_DIR \
        └─────── **{hostname}_{ip}_{timestampe_exec_record}**/ \
                             ├───────── **lynis_data.dat**    # Raw structured data \
