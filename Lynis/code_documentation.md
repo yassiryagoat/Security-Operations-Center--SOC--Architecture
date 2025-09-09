@@ -1,4 +1,6 @@
-# **1. Header and Setup**
+# run_lynis.sh
+
+## **1. Header and Setup**
 
 ### A-Debugin code solutions
 
@@ -22,7 +24,7 @@ false | echo "Pipeline still runs"  # ← `false` fails, but pipeline exits 0 (s
 echo "Script continues"             # ← This line executes
 ```
 
-# 2. Creating the Architecture of the project
+## 2. Creating the Architecture of the project
 
 ```bash
 
@@ -61,7 +63,7 @@ mkdir -p "$CENTRAL_REPORTS_DIR" /opt/audit/logs /opt/audit/processed
 > 2. **Data Processing** → JSON/HTML generated in same scan subdirectory
 > 3. **Report Consolidation** → Final reports moved to **`processed/`**
 
-# 3. Login function
+## 3. Login function
 
 ```bash
 log() {
@@ -71,7 +73,7 @@ log() {
 
 This function displays the execution timestamp and a descriptive message in the CLI, and also appends them to the log file. The message explains which task or script block was executed.
 
-# 4. Colors for output
+## 4. Colors for output
 
 ```bash
 # Colors for output
@@ -82,7 +84,7 @@ BLUE='033[0;34m'
 NC='033[0m' # No Color
 ```
 
-# 5. Function to execute Lynis on remote server
+## 5. Function to execute Lynis on remote server
 
 ```bash
 
