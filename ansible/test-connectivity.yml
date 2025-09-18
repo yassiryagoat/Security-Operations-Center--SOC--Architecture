@@ -1,0 +1,20 @@
+---
+# Simple connectivity test to verify SSH access to Purple Kali
+- name: Test Connectivity to All Hosts
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    # Basic ICMP ping test (if ICMP is allowed)
+    - name: Ping test
+      ping:
+    
+    # Verify SSH connectivity and user context
+    - name: Check SSH connectivity
+      command: whoami
+      register: ssh_test
+    
+    # Display connection status for verification
+    - name: Display connection info
+      debug:
+        msg: "Connected to {{ inventory_hostname }} as {{ ssh_test.stdout }}"

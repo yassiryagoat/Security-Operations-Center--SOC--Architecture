@@ -1,0 +1,180 @@
+---
+- name: SOC Security Scanning Automation
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    scan_id: "{{ ansible_date_time.epoch }}"
+    
+  tasks:
+    - name: Create local reports directory
+      file:
+        path: "{{ local_logs_dir }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Initialize static log files
+      file:
+        path: "{{ local_logs_dir }}/{{ hostvars[item]['log_file'] }}"
+        state: touch
+        mode: '0644'
+      loop: "{{ groups['all'] }}"
+      when: hostvars[item]['log_file'] is defined
+
+- name: Execute Lynis Scans on Purple Kali
+  hosts: orchestrators
+  gather_facts: yes
+  become: yes
+  
+  tasks:
+    - name: Check if Lynis is installed
+      command: which lynis
+      register: lynis_check
+      failed_when: false
+      
+    - name: Install Lynis if not present
+      apt:
+        name: lynis
+        state: present
+      when: lynis_check.rc != 0
+    
+    - name: Create reports directory
+      file:
+        path: "{{ reports_dir }}"
+        state: directory
+        mode: '0755'
+    
+- name: Execute Your Lynis Automation Scripts
+  hosts: orchestrators
+  gather_facts: yes
+  
+  tasks:
+    - name: Create reports base directory if not exists
+      file:
+        path: "{{ reports_base_dir }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Check if your scripts exist
+      stat:
+        path: "{{ item }}"
+      register: script_check
+      loop:
+        - "{{ wrapper_script }}"
+        - "{{ main_script }}"
+        - "{{ target_list }}"
+      failed_when: not script_check.stat.exists
+    
+    - name: Execute Your Lynis Scripts Remotely on Purple Kali
+      shell: |
+        cd {{ reports_base_dir | dirname }}
+        bash {{ wrapper_script }} {{ main_script }} {{ target_list }} > /tmp/lynis-execution-{{ scan_id }}.log 2>&1
+      register: lynis_execution
+      async: 1800  # 30 minutes timeout
+      poll: 30     # Check every 30 seconds
+    
+    - name: Verify script execution completed
+      debug:
+        msg: |
+          Remote Lynis automation completed on Purple Kali
+          Exit code: {{ lynis_execution.rc }}
+          Execution time: {{ lynis_execution.delta }}
+          Check Purple Kali:/tmp/lynis-execution-{{ scan_id }}.log for details
+
+- name: Collect and Process Reports
+  hosts: orchestrators
+  gather_facts: yes
+  
+  tasks:
+    - name: Find server directories and latest reports
+      find:
+        paths: "{{ reports_base_dir }}"
+        file_type: directory
+        patterns: "*server*"
+      register: server_directories
+    
+    - name: Find latest reports from each server directory  
+      find:
+        paths: "{{ item.path }}"
+        patterns: 
+          - "report_*.dat"
+          - "report_*.log"
+        age: "-1h"  # Files modified in last hour
+      register: latest_reports
+      loop: "{{ server_directories.files }}"
+    
+    - name: Fetch latest Lynis reports from organized directories
+      fetch:
+        src: "{{ item.1.path }}"
+        dest: "/tmp/fetched-reports/{{ item.1.path | basename }}"
+        flat: yes
+      loop: "{{ latest_reports.results | subelements('files') }}"
+      when: latest_reports.results is defined
+    
+    - name: Clean up remote reports
+      file:
+        path: "{{ reports_dir }}"
+        state: absent
+
+- name: Process Reports Locally
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Process collected reports for ELK ingestion
+      shell: |
+        TIMESTAMP="{{ scan_timestamp }}"
+        
+        # Process each fetched report file
+        for report_file in /tmp/fetched-reports/report_*.dat /tmp/fetched-reports/report_*.log; do
+          if [ -f "$report_file" ]; then
+            # Extract server name from directory structure or filename
+            FILENAME=$(basename "$report_file")
+            
+            # Determine server from the parent directory name stored in fetch
+            if [[ "$FILENAME" =~ ubuntu_server([0-9]+) ]]; then
+              HOSTNAME="ubuntu-server-${BASH_REMATCH[1]}"
+              LOG_FILE="{{ local_logs_dir }}/ubuntu-server-${BASH_REMATCH[1]}.log"
+            elif [[ "$FILENAME" =~ purple.kali ]]; then
+              HOSTNAME="purple-kali"  
+              LOG_FILE="{{ local_logs_dir }}/purple-kali.log"
+            else
+              HOSTNAME="unknown-host"
+              LOG_FILE="{{ local_logs_dir }}/unknown-host.log"
+            fi
+            
+            # Create static log file if it doesn't exist
+            touch "$LOG_FILE"
+            
+            # Add scan header with timestamp from filename if possible
+            REPORT_TIMESTAMP=$(echo "$FILENAME" | grep -o 'report_[0-9]*' | cut -d'_' -f2)
+            echo "[$TIMESTAMP] $HOSTNAME - Lynis Scan (Report: $REPORT_TIMESTAMP)" >> "$LOG_FILE"
+            
+            # Process .dat files for warnings and suggestions  
+            if [[ "$report_file" == *.dat ]]; then
+              grep -E "warning\[\]|suggestion\[\]|manual\[\]" "$report_file" | sed "s/.*=//g" | \
+              sed "s/^/[$TIMESTAMP] $HOSTNAME - /" >> "$LOG_FILE"
+            fi
+            
+            # Process .log files for key findings
+            if [[ "$report_file" == *.log ]]; then
+              grep -E "(WARNING|SUGGESTION|Found)" "$report_file" | head -20 | \
+              sed "s/^/[$TIMESTAMP] $HOSTNAME - /" >> "$LOG_FILE"
+            fi
+            
+            # Add completion marker
+            echo "[$TIMESTAMP] $HOSTNAME - Report processed: $FILENAME" >> "$LOG_FILE"
+          fi
+        done
+    
+    - name: Cleanup temporary files
+      file:
+        path: /tmp/fetched-reports
+        state: absent
+    
+    - name: Display scan summary
+      debug:
+        msg: |
+          Security scan completed successfully!
+          Scan ID: {{ scan_id }}
+          Reports updated in: {{ local_logs_dir }}
+          Check Kibana dashboard for real-time results
